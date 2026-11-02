@@ -1,9 +1,10 @@
 import { useEffect, useState, type SubmitEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
+import EffortSelect from '../components/EffortSelect'
 import SubjectSelect from '../components/SubjectSelect'
 import StatusBadge from '../components/StatusBadge'
 import SubjectTag from '../components/SubjectTag'
-import { startAnalysis } from '../lib/assistant'
+import { DEFAULT_EFFORT, MAX_QUESTIONS_FOR_HIGH_EFFORT, startAnalysis } from '../lib/assistant'
 import { buildClaudePrompt, CLAUDE_URL, parseClaudeAnswer } from '../lib/claudeImport'
 import { formatDay, toISODate } from '../lib/dates'
 import {
@@ -18,7 +19,7 @@ import {
   type PageRange,
 } from '../lib/extractText'
 import { supabase } from '../lib/supabase'
-import type { StudyDocument } from '../lib/types'
+import type { ReasoningEffort, StudyDocument } from '../lib/types'
 import { useSubjects } from '../lib/useSubjects'
 
 type DocumentSummary = Pick<StudyDocument, 'id' | 'title' | 'file_name' | 'subject_id' | 'status' | 'created_at'>
@@ -52,6 +53,7 @@ export default function Documents() {
   const [title, setTitle] = useState('')
   const [subjectId, setSubjectId] = useState('')
   const [questionCount, setQuestionCount] = useState(12)
+  const [effort, setEffort] = useState<ReasoningEffort>(DEFAULT_EFFORT)
   const [progress, setProgress] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -193,10 +195,17 @@ export default function Documents() {
           file_name: source === 'file' && file ? file.name + pagesLabel : null,
           content: text,
           question_count: questionCount,
+          reasoning_effort: effort,
         })
         .select('id')
         .single()
-      if (error) throw new Error(error.message)
+      if (error) {
+        throw new Error(
+          error.message.includes('reasoning_effort')
+            ? 'La base n’est pas à jour : dans Supabase (SQL Editor), exécute le fichier supabase/mise-a-jour-1-reflexion.sql.'
+            : error.message,
+        )
+      }
 
       // Même en cas d'erreur, on ouvre la page du document : elle affiche le problème et propose de réessayer.
       await startAnalysis(data.id)
@@ -345,7 +354,25 @@ export default function Documents() {
               ))}
             </select>
           </label>
+          {source !== 'claude' && (
+            <label className="field">
+              <span>Réflexion de l’IA</span>
+              <EffortSelect value={effort} onChange={setEffort} />
+            </label>
+          )}
         </div>
+
+        {source !== 'claude' && (
+          <p className="muted small">
+            {effort === 'low' && 'Rapide : idéal pour des définitions ou du vocabulaire.'}
+            {effort === 'medium' && 'Équilibrée : le bon choix pour la plupart des cours.'}
+            {effort === 'high' &&
+              (questionCount > MAX_QUESTIONS_FOR_HIGH_EFFORT
+                ? `⚠ Approfondie avec ${questionCount} questions : l’analyse risque de dépasser le temps limite. ` +
+                  `Vise ${MAX_QUESTIONS_FOR_HIGH_EFFORT} questions au plus, ou un seul chapitre.`
+                : 'Approfondie : corrigés plus rigoureux pour les calculs et démonstrations, mais plus lent.')}
+          </p>
+        )}
 
         {source === 'claude' && (
           <ol className="claude-steps">

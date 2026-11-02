@@ -73,6 +73,11 @@ texte : il faut alors coller le texte dans l'onglet « Coller du texte ».
 Supabase → **SQL Editor** → **New query** → coller tout le contenu de `supabase/documents.sql` → **Run**.
 Les tables `documents` et `questions` apparaissent dans **Table Editor**.
 
+**Mises à jour** : si tu avais exécuté `documents.sql` avant l'une d'elles, exécute aussi, une fois, les fichiers
+`supabase/mise-a-jour-*.sql` (par ordre de numéro). Ils sont sans danger s'ils ont déjà été appliqués.
+
+- `mise-a-jour-1-reflexion.sql` : colonne `reasoning_effort` (réflexion de l'IA choisie pour chaque document).
+
 ### Étape 2 (option A, conseillée) : obtenir une clé Google Gemini gratuite
 
 1. Va sur <https://aistudio.google.com> et connecte-toi avec un compte Google.
@@ -153,7 +158,13 @@ Supabase → **Edge Functions** → **Secrets** (ou **Project Settings → Edge 
 
 | Nom | Valeur |
 |---|---|
-| `AI_REASONING_EFFORT` | `low`, `medium` ou `high` : temps de réflexion du modèle. Plus c'est haut, plus c'est juste… et lent. Seulement pour les modèles qui « réfléchissent » (Gemini 3.x, gpt-5/6…), pas pour gpt-4.1 |
+| `AI_REASONING_EFFORT` | `low`, `medium` ou `high` : réflexion **par défaut**, utilisée seulement quand un document n'a pas de réflexion choisie (le site en enregistre une pour chaque nouveau document). Seulement pour les modèles qui « réfléchissent » (Gemini 3.x, gpt-5/6…), pas pour gpt-4.1 |
+
+**Réflexion par document.** Le formulaire de la page Documents IA propose « Réflexion de l'IA » : *Rapide* (`low`),
+*Équilibrée* (`medium`, par défaut) ou *Approfondie* (`high`). Le choix est enregistré dans
+`documents.reasoning_effort` et réutilisé par « Relancer l'analyse », qui permet aussi de le changer (utile si
+l'analyse a manqué de temps). Avec *Approfondie*, viser 16 questions au plus : au-delà, l'IA risque de dépasser les
+150 secondes de l'Edge Function.
 
 Pour passer d'un fournisseur à l'autre plus tard, il suffit de changer `AI_PROVIDER` (et d'avoir ses clés).
 

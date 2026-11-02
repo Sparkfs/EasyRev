@@ -40,6 +40,9 @@ export interface StudySession {
 
 export type DocumentStatus = 'pending' | 'ready' | 'error'
 
+/** Temps de réflexion de l'IA : plus il est élevé, plus les corrigés sont rigoureux… et lents. */
+export type ReasoningEffort = 'low' | 'medium' | 'high'
+
 export interface StudyDocument {
   id: string
   subject_id: string
@@ -47,6 +50,8 @@ export interface StudyDocument {
   file_name: string | null
   content: string
   question_count: number
+  /** Réflexion choisie pour ce document ; null = réglage par défaut de l'Edge Function. */
+  reasoning_effort: ReasoningEffort | null
   /** 'pending' pendant que l'IA travaille, 'ready' quand c'est fini, 'error' en cas de problème. */
   status: DocumentStatus
   error: string | null

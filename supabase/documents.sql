@@ -10,6 +10,7 @@ create table public.documents (
   file_name text,
   content text not null,                       -- texte extrait du document
   question_count integer not null default 12 check (question_count between 4 and 30),
+  reasoning_effort text check (reasoning_effort in ('low', 'medium', 'high')),  -- réflexion de l'IA (null = réglage par défaut)
   status text not null default 'pending' check (status in ('pending', 'ready', 'error')),
   error text,
   summary text,                                -- résumé

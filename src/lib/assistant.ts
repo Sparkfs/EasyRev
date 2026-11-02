@@ -1,6 +1,6 @@
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from './supabase'
-import type { Question, QuestionKind } from './types'
+import type { Question, QuestionKind, ReasoningEffort } from './types'
 
 export const KIND_LABELS: Record<QuestionKind, string> = {
   qcm: 'QCM',
@@ -8,6 +8,21 @@ export const KIND_LABELS: Record<QuestionKind, string> = {
   courte: 'Réponse courte',
   trous: 'Texte à trous',
   ouverte: 'Question ouverte',
+}
+
+export const DEFAULT_EFFORT: ReasoningEffort = 'medium'
+
+export const EFFORT_OPTIONS: { value: ReasoningEffort; label: string }[] = [
+  { value: 'low', label: 'Rapide' },
+  { value: 'medium', label: 'Équilibrée' },
+  { value: 'high', label: 'Approfondie' },
+]
+
+/** Au-delà de ce nombre de questions, une réflexion approfondie risque de dépasser le temps limite (150 s). */
+export const MAX_QUESTIONS_FOR_HIGH_EFFORT = 16
+
+export function effortLabel(effort: ReasoningEffort | null): string {
+  return EFFORT_OPTIONS.find((o) => o.value === (effort ?? DEFAULT_EFFORT))!.label
 }
 
 /**

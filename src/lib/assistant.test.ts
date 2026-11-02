@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { questionToFlashcard } from './assistant'
+import { effortLabel, questionToFlashcard } from './assistant'
 import { cleanText } from './extractText'
 import type { Question } from './types'
 
@@ -42,6 +42,14 @@ describe('questionToFlashcard', () => {
   it('précise « Vrai ou faux » au recto', () => {
     const card = questionToFlashcard({ ...base, kind: 'vrai_faux', prompt: 'La Terre est plate.', answer: 'Faux' })
     expect(card.front).toBe('Vrai ou faux ? La Terre est plate.')
+  })
+})
+
+describe('effortLabel', () => {
+  it('nomme chaque niveau de réflexion, « Équilibrée » par défaut', () => {
+    expect(effortLabel('low')).toBe('Rapide')
+    expect(effortLabel('high')).toBe('Approfondie')
+    expect(effortLabel(null)).toBe('Équilibrée')
   })
 })
 

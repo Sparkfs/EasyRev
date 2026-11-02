@@ -6,7 +6,8 @@
 //
 // Secrets à définir dans Supabase (Edge Functions → Secrets) :
 //   AI_PROVIDER              « gemini » ou « azure » (facultatif : déduit des secrets présents)
-//   AI_REASONING_EFFORT      facultatif : low, medium ou high (temps de réflexion du modèle)
+//   AI_REASONING_EFFORT      facultatif : low, medium ou high (temps de réflexion du modèle), utilisé quand le
+//                            document n'a pas de réflexion choisie (colonne documents.reasoning_effort)
 // Pour Gemini :
 //   GEMINI_API_KEY           la clé créée sur Google AI Studio
 //   GEMINI_MODEL             facultatif, par défaut gemini-3.8-flash
@@ -70,9 +71,12 @@ Deno.serve(async (req) => {
 
   const { data: doc, error } = await supabase
     .from('documents')
-    .select('id, title, content, question_count, subjects(name)')
+    .select('id, title, content, question_count, reasoning_effort, subjects(name)')
     .eq('id', documentId)
     .single()
+  if (error?.message.includes('reasoning_effort')) {
+    return json({ error: 'La base n’est pas à jour : exécute supabase/mise-a-jour-1-reflexion.sql dans Supabase.' }, 500)
+  }
   if (error || !doc) return json({ error: 'Document introuvable.' }, 404)
 
   await supabase
@@ -91,11 +95,19 @@ interface DocumentRow {
   title: string
   content: string
   question_count: number
+  reasoning_effort: string | null
   subjects: { name: string } | null
 }
 
+const EFFORTS = ['low', 'medium', 'high']
+
 async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
   try {
+    // Réflexion choisie pour ce document, sinon le réglage par défaut (secret AI_REASONING_EFFORT).
+    const effort = EFFORTS.includes(doc.reasoning_effort ?? '')
+      ? doc.reasoning_effort!
+      : Deno.env.get('AI_REASONING_EFFORT') || undefined
+
     const context = [
       `Matière : ${doc.subjects?.name ?? 'non précisée'}`,
       `Titre : ${doc.title}`,
@@ -107,8 +119,8 @@ async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
 
     // Deux demandes en parallèle : c'est deux fois plus rapide qu'une seule grosse demande.
     const [explanation, quiz] = await Promise.all([
-      askModel(EXPLANATION_INSTRUCTIONS, context, 'explication', EXPLANATION_SCHEMA) as Promise<Explanation>,
-      askModel(questionsInstructions(doc.question_count), context, 'questions', QUESTIONS_SCHEMA) as Promise<{
+      askModel(EXPLANATION_INSTRUCTIONS, context, 'explication', EXPLANATION_SCHEMA, effort) as Promise<Explanation>,
+      askModel(questionsInstructions(doc.question_count), context, 'questions', QUESTIONS_SCHEMA, effort) as Promise<{
         questions: GeneratedQuestion[]
       }>,
     ])
@@ -148,8 +160,13 @@ async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
 // Gemini et Azure OpenAI acceptent tous deux le format « chat completions » d'OpenAI :
 // seuls l'adresse et la clé changent.
 
-async function askModel(instructions: string, content: string, name: string, schema: object): Promise<unknown> {
-  const reasoningEffort = Deno.env.get('AI_REASONING_EFFORT')
+async function askModel(
+  instructions: string,
+  content: string,
+  name: string,
+  schema: object,
+  reasoningEffort: string | undefined,
+): Promise<unknown> {
   const body = {
     messages: [
       { role: 'system', content: instructions },

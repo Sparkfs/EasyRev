@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import EffortSelect from '../components/EffortSelect'
 import QuestionCard from '../components/QuestionCard'
 import StatusBadge from '../components/StatusBadge'
 import SubjectTag from '../components/SubjectTag'
-import { KIND_LABELS, questionToFlashcard, startAnalysis } from '../lib/assistant'
+import { DEFAULT_EFFORT, effortLabel, KIND_LABELS, questionToFlashcard, startAnalysis } from '../lib/assistant'
 import { today } from '../lib/dates'
 import { supabase } from '../lib/supabase'
-import type { Question, QuestionKind, StudyDocument } from '../lib/types'
+import type { Question, QuestionKind, ReasoningEffort, StudyDocument } from '../lib/types'
 import { useSubjects } from '../lib/useSubjects'
 
-/** Au-delà de ce délai sans nouvelle, on considère que l'analyse s'est interrompue. */
-const STUCK_AFTER_MS = 4 * 60_000
+/**
+ * Au-delà de ce délai sans nouvelle, on considère que l'analyse s'est interrompue
+ * (l'Edge Function est arrêtée au bout de 150 secondes sur l'offre gratuite de Supabase).
+ */
+const STUCK_AFTER_MS = 3 * 60_000
 
 export default function DocumentView() {
   const { id = '' } = useParams()
@@ -25,6 +29,8 @@ export default function DocumentView() {
   // Changer cette valeur relance le chargement (après « Relancer l'analyse ») ou remet les questions à zéro.
   const [reloadKey, setReloadKey] = useState(0)
   const [now, setNow] = useState(() => Date.now())
+  // Réflexion choisie pour relancer l'analyse (null = garder celle du document).
+  const [retryEffort, setRetryEffort] = useState<ReasoningEffort | null>(null)
 
   // Charge le document ; tant que l'IA travaille, recharge toutes les 4 secondes.
   useEffect(() => {
@@ -58,7 +64,20 @@ export default function DocumentView() {
   async function retry() {
     if (!doc) return
     setError(null)
-    setDoc({ ...doc, status: 'pending', error: null, updated_at: new Date().toISOString() })
+    const effort = retryEffort ?? doc.reasoning_effort ?? DEFAULT_EFFORT
+    if (effort !== doc.reasoning_effort) {
+      const { error } = await supabase.from('documents').update({ reasoning_effort: effort }).eq('id', doc.id)
+      if (error) {
+        setError(
+          error.message.includes('reasoning_effort')
+            ? 'La base n’est pas à jour : dans Supabase (SQL Editor), exécute supabase/mise-a-jour-1-reflexion.sql.'
+            : error.message,
+        )
+        return
+      }
+    }
+    setDoc({ ...doc, reasoning_effort: effort, status: 'pending', error: null, updated_at: new Date().toISOString() })
+    setRetryEffort(null)
     await startAnalysis(doc.id)
     setReloadKey((k) => k + 1)
   }
@@ -96,6 +115,7 @@ export default function DocumentView() {
           <SubjectTag subject={subject} />
           <StatusBadge status={doc.status} />
           {doc.file_name && <span className="muted small">{doc.file_name}</span>}
+          {doc.reasoning_effort && <span className="chip">Réflexion {effortLabel(doc.reasoning_effort).toLowerCase()}</span>}
         </p>
       )}
     </header>
@@ -110,6 +130,19 @@ export default function DocumentView() {
     )
   }
 
+  // Choix de la réflexion + bouton, pour relancer après une erreur ou une interruption.
+  const retryControls = (
+    <div className="retry-row">
+      <label className="field">
+        <span>Réflexion de l’IA</span>
+        <EffortSelect value={retryEffort ?? doc.reasoning_effort ?? DEFAULT_EFFORT} onChange={setRetryEffort} />
+      </label>
+      <button className="btn btn-primary" onClick={retry}>
+        Relancer l’analyse
+      </button>
+    </div>
+  )
+
   if (doc.status === 'pending') {
     const stuck = now - new Date(doc.updated_at).getTime() > STUCK_AFTER_MS
     return (
@@ -119,19 +152,22 @@ export default function DocumentView() {
           {stuck ? (
             <>
               <p className="big">L’analyse semble interrompue.</p>
-              <div>
-                <button className="btn btn-primary" onClick={retry}>
-                  Relancer l’analyse
-                </button>
-              </div>
+              <p>
+                L’IA a sans doute manqué de temps (150 secondes maximum). Relance avec une réflexion plus rapide,
+                ou analyse moins de pages ou moins de questions.
+              </p>
+              {error && <p className="error">{error}</p>}
+              {retryControls}
             </>
           ) : (
             <>
               <div className="spinner" aria-hidden="true" />
               <p className="big">L’assistant lit ton document…</p>
               <p>
-                Il prépare une explication et {doc.question_count} questions corrigées. Cela prend en général
-                entre 30 secondes et 2 minutes. Tu peux quitter cette page, l’analyse continue.
+                Il prépare une explication et {doc.question_count} questions corrigées
+                {doc.reasoning_effort && ` (réflexion ${effortLabel(doc.reasoning_effort).toLowerCase()})`}. Cela
+                prend en général entre 30 secondes et 2 minutes et demie. Tu peux quitter cette page, l’analyse
+                continue.
               </p>
             </>
           )}
@@ -147,11 +183,8 @@ export default function DocumentView() {
         <section className="card stack">
           <h2 className="danger-text">⚠ L’analyse a échoué</h2>
           <p className="error pre-wrap">{doc.error ?? 'Erreur inconnue.'}</p>
-          <div>
-            <button className="btn btn-primary" onClick={retry}>
-              Relancer l’analyse
-            </button>
-          </div>
+          {error && <p className="error">{error}</p>}
+          {retryControls}
         </section>
       </>
     )
