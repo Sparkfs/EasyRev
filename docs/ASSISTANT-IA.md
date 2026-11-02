@@ -54,7 +54,14 @@ environ deux fois plus rapide qu'une seule grosse demande.
 **Structured outputs** : on impose à l'IA un format JSON précis (`response_format: json_schema`). Le site reçoit
 toujours des données bien rangées, jamais du texte libre à déchiffrer.
 
-**Limites** : environ 60 000 caractères analysés (~25 pages). Un PDF **scanné** (une image) ne contient pas de
+**Limites** : jusqu'à 400 000 caractères par analyse (~160 pages ; constante `MAX_CHARACTERS`, la même dans
+`src/lib/extractText.ts` et dans l'Edge Function). Pour un PDF, on peut choisir une **plage de pages** (par exemple
+un chapitre) : c'est conseillé pour un gros polycopié, les explications et les questions sont plus précises.
+Le modèle accepterait bien plus (≈ 1 million de tokens pour gemini-3.8-flash) ; les vraies limites sont la qualité,
+le temps de la fonction (150 s sur l'offre gratuite de Supabase, surtout consommé par la rédaction des réponses)
+et le **quota gratuit de Gemini** (tokens par minute) : le document est envoyé deux fois (explication + questions),
+donc un très gros document peut provoquer une erreur 429 ; il suffit alors d'attendre une minute ou de réduire
+la plage de pages. Un PDF **scanné** (une image) ne contient pas de
 texte : il faut alors coller le texte dans l'onglet « Coller du texte ».
 
 ---

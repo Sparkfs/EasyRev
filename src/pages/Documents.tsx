@@ -6,14 +6,24 @@ import SubjectTag from '../components/SubjectTag'
 import { startAnalysis } from '../lib/assistant'
 import { buildClaudePrompt, CLAUDE_URL, parseClaudeAnswer } from '../lib/claudeImport'
 import { formatDay, toISODate } from '../lib/dates'
-import { ACCEPTED_FILES, cleanText, extractText, MAX_CHARACTERS, MIN_CHARACTERS } from '../lib/extractText'
+import {
+  ACCEPTED_FILES,
+  APPROX_MAX_PAGES,
+  cleanText,
+  countPdfPages,
+  extractText,
+  isPdf,
+  MAX_CHARACTERS,
+  MIN_CHARACTERS,
+  type PageRange,
+} from '../lib/extractText'
 import { supabase } from '../lib/supabase'
 import type { StudyDocument } from '../lib/types'
 import { useSubjects } from '../lib/useSubjects'
 
 type DocumentSummary = Pick<StudyDocument, 'id' | 'title' | 'file_name' | 'subject_id' | 'status' | 'created_at'>
 
-const QUESTION_COUNTS = [8, 12, 16, 20]
+const QUESTION_COUNTS = [8, 12, 16, 20, 25, 30]
 
 type Source = 'file' | 'text' | 'claude'
 
@@ -32,6 +42,10 @@ export default function Documents() {
   const [loading, setLoading] = useState(true)
   const [source, setSource] = useState<Source>('file')
   const [file, setFile] = useState<File | null>(null)
+  // Pour un PDF : son nombre de pages et la plage choisie (gardée en texte pour laisser taper librement).
+  const [pageCount, setPageCount] = useState<number | null>(null)
+  const [fromPage, setFromPage] = useState('1')
+  const [toPage, setToPage] = useState('')
   const [pastedText, setPastedText] = useState('')
   const [claudeAnswer, setClaudeAnswer] = useState('')
   const [promptCopied, setPromptCopied] = useState(false)
@@ -110,6 +124,31 @@ export default function Documents() {
     navigate(`/documents/${data.id}`)
   }
 
+  async function chooseFile(next: File | null) {
+    setFile(next)
+    setPageCount(null)
+    if (!next || !isPdf(next)) return
+    try {
+      const count = await countPdfPages(next)
+      setPageCount(count)
+      setFromPage('1')
+      setToPage(String(count))
+    } catch {
+      // PDF illisible : l'erreur s'affichera au moment de l'analyse.
+    }
+  }
+
+  /** Plage de pages choisie pour un PDF, vérifiée ; `undefined` pour les autres fichiers. */
+  function selectedRange(): PageRange | undefined {
+    if (source !== 'file' || pageCount === null) return undefined
+    const from = Number.parseInt(fromPage, 10)
+    const to = Number.parseInt(toPage, 10)
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > pageCount || from > to) {
+      throw new Error(`Plage de pages invalide : choisis des pages entre 1 et ${pageCount}, la première avant la dernière.`)
+    }
+    return { from, to }
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault()
     setError(null)
@@ -118,14 +157,27 @@ export default function Documents() {
         await importFromClaude()
         return
       }
+      const range = selectedRange()
+      const partial = range !== undefined && pageCount !== null && (range.from > 1 || range.to < pageCount)
+      const pagesLabel = partial ? ` (p. ${range.from}–${range.to})` : ''
+
       setProgress('Lecture du document…')
-      const text = source === 'file' ? (file ? await extractText(file) : '') : cleanText(pastedText)
+      const text = source === 'file' ? (file ? await extractText(file, range) : '') : cleanText(pastedText)
       if (text.length < MIN_CHARACTERS) {
         throw new Error(
           source === 'file'
             ? 'Ce document ne contient presque pas de texte. S’il s’agit d’un PDF scanné (une image), ' +
-              'copie plutôt le texte dans l’onglet « Coller du texte ».'
+              'copie plutôt le texte dans l’onglet « Coller du texte », ou utilise l’onglet Claude.'
             : `Colle un texte plus long (au moins ${MIN_CHARACTERS} caractères).`,
+        )
+      }
+      if (text.length > MAX_CHARACTERS) {
+        throw new Error(
+          `Ce document est trop long pour une seule analyse (${text.length.toLocaleString('fr-FR')} caractères ; ` +
+            `maximum ${MAX_CHARACTERS.toLocaleString('fr-FR')}, soit environ ${APPROX_MAX_PAGES} pages). ` +
+            (pageCount !== null
+              ? 'Choisis une plage de pages plus courte, par exemple un chapitre.'
+              : 'Envoie-le en plusieurs parties.'),
         )
       }
 
@@ -134,9 +186,12 @@ export default function Documents() {
         .from('documents')
         .insert({
           subject_id: formSubjectId,
-          title: title.trim() || file?.name.replace(/\.[^.]+$/, '') || `Texte du ${formatDay(toISODate(new Date()))}`,
-          file_name: source === 'file' ? file?.name : null,
-          content: text.slice(0, MAX_CHARACTERS),
+          title:
+            title.trim() ||
+            (file ? file.name.replace(/\.[^.]+$/, '') + pagesLabel : '') ||
+            `Texte du ${formatDay(toISODate(new Date()))}`,
+          file_name: source === 'file' && file ? file.name + pagesLabel : null,
+          content: text,
           question_count: questionCount,
         })
         .select('id')
@@ -219,7 +274,7 @@ export default function Documents() {
             <input
               type="file"
               accept={ACCEPTED_FILES}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
               required
             />
           </label>
@@ -234,6 +289,41 @@ export default function Documents() {
               required
             />
           </label>
+        )}
+
+        {source === 'file' && pageCount !== null && (
+          <div className="page-range">
+            <label className="field">
+              <span>De la page</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={pageCount}
+                value={fromPage}
+                onChange={(e) => setFromPage(e.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>À la page</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={pageCount}
+                value={toPage}
+                onChange={(e) => setToPage(e.target.value)}
+                required
+              />
+            </label>
+            <p className="muted small">
+              Ce PDF fait <strong>{pageCount} pages</strong>.{' '}
+              {pageCount > APPROX_MAX_PAGES && `Au-delà d’environ ${APPROX_MAX_PAGES} pages, choisis une partie. `}
+              Pour un gros polycopié, analyse plutôt chapitre par chapitre : explications et questions seront plus
+              précises.
+            </p>
+          </div>
         )}
 
         <div className="settings-grid">
@@ -297,7 +387,8 @@ export default function Documents() {
           </button>
           {source !== 'claude' && (
             <span className="muted small">
-              Environ 25 pages maximum. Ton fichier reste sur ton appareil : seul son texte est envoyé.
+              Jusqu’à environ {APPROX_MAX_PAGES} pages par analyse. Ton fichier reste sur ton appareil : seul son texte
+              est envoyé.
             </span>
           )}
         </div>

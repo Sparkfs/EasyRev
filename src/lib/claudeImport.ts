@@ -20,7 +20,7 @@ Réponds UNIQUEMENT avec un objet JSON valide (aucun texte avant ou après), au 
 
 {
   "summary": "4 à 6 phrases : de quoi parle le document et ce qu'il faut absolument retenir",
-  "key_points": ["4 à 8 notions essentielles, une phrase chacune"],
+  "key_points": ["4 à 10 notions essentielles, une phrase chacune"],
   "sections": [{ "title": "Titre de la partie", "content": "Explication avec exemples concrets ; paragraphes séparés par une ligne vide (\\n\\n)" }],
   "glossary": [{ "term": "Terme technique", "definition": "Définition courte" }],
   "questions": [{
@@ -35,7 +35,8 @@ Réponds UNIQUEMENT avec un objet JSON valide (aucun texte avant ou après), au 
 }
 
 Règles :
-- sections : 3 à 7 parties qui suivent la logique du document.
+- sections : une partie par chapitre ou grande notion du document, dans son ordre (3 à 12 parties selon sa longueur).
+- Si le document est long, répartis les questions entre tous ses chapitres.
 - Utilise les cinq types de questions, au moins une fois chacun :
   - "qcm" : 4 propositions plausibles, une seule correcte ; "correct_choice" = indice (0 à 3) de la bonne ; "answer" recopie la bonne proposition.
   - "vrai_faux" : une affirmation ; "answer" vaut exactement "Vrai" ou "Faux".

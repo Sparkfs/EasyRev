@@ -24,8 +24,8 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-/** Au-delà, le texte est coupé (environ 25 pages de cours). */
-const MAX_CHARACTERS = 60_000
+/** Au-delà, le texte est coupé (environ 160 pages de cours). Même limite que dans le site (extractText.ts). */
+const MAX_CHARACTERS = 400_000
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
 
@@ -224,9 +224,11 @@ Explique-le à un élève qui le découvre, pour qu'il le comprenne vraiment.
 - Rédige en français, avec des phrases simples, précises et sans jargon inutile.
 - Appuie-toi sur le contenu du document. Si tu ajoutes une précision utile qui n'y figure pas, signale-le par « En complément : ».
 - summary : 4 à 6 phrases qui disent de quoi parle le document et ce qu'il faut absolument en retenir.
-- key_points : 4 à 8 notions essentielles, une phrase chacune.
-- sections : 3 à 7 parties qui suivent la logique du document. Pour chacune, explique les idées avec des exemples concrets
-  ou des analogies. Tu peux écrire plusieurs paragraphes séparés par une ligne vide. Pas de Markdown (ni #, ni **).
+- key_points : 4 à 10 notions essentielles, une phrase chacune.
+- sections : une partie par chapitre ou grande notion du document, dans son ordre (de 3 parties pour un document
+  court à 12 au maximum pour un long polycopié). Pour chacune, explique les idées avec des exemples concrets ou des
+  analogies ; plus le document est long, plus chaque partie reste synthétique. Tu peux écrire plusieurs paragraphes
+  séparés par une ligne vide. Pas de Markdown (ni #, ni **).
 - glossary : les termes techniques importants avec une définition courte (liste vide s'il n'y en a pas).
 
 Le texte peut contenir des défauts dus à l'extraction (mots coupés, numéros ou en-têtes de page) : ignore-les.`
@@ -274,7 +276,8 @@ interface GeneratedQuestion {
 
 function questionsInstructions(count: number): string {
   return `Tu es un professeur qui prépare un entraînement pour un élève à partir d'un document de cours.
-Crée exactement ${count} questions variées qui couvrent l'ensemble du document, classées de la plus facile à la plus difficile.
+Crée exactement ${count} questions variées, classées de la plus facile à la plus difficile. Elles doivent couvrir
+l'ensemble du document, du début à la fin : si le document est long, répartis-les entre ses chapitres.
 
 Utilise ces cinq types (au moins une question de chaque type) :
 - "qcm" : 4 propositions plausibles dans "choices", une seule correcte. "correct_choice" est l'indice (0 à 3) de la bonne
