@@ -7,10 +7,11 @@ Un site pour organiser ses révisions :
 - **Flashcards** avec **répétition espacée** : le site te repropose chaque carte au bon moment (comme Anki).
 - **Planning** : tâches avec échéance, regroupées en « En retard », « Aujourd'hui », « À venir ».
 - **Pomodoro** : minuteur concentration/pause qui continue quand tu changes de page ; chaque séance terminée est comptée dans ton temps d'étude.
+- **Documents IA** : envoie un cours (PDF, Word, texte) ; un assistant IA (Google Gemini ou Azure OpenAI) te l'explique et prépare des questions corrigées de 5 types (QCM, vrai/faux, réponse courte, texte à trous, question ouverte), à travailler sur place ou à envoyer dans tes flashcards. Installation : [docs/ASSISTANT-IA.md](docs/ASSISTANT-IA.md).
 
 Tes données sont enregistrées en ligne (Supabase) : tu les retrouves sur ton ordinateur comme sur ton téléphone, après connexion avec ton compte.
 
-**Technologies** : React 19 + TypeScript + Vite pour l'interface, Supabase (base PostgreSQL + comptes utilisateurs), React Router pour les pages, Vitest pour les tests.
+**Technologies** : React 19 + TypeScript + Vite pour l'interface, Supabase (base PostgreSQL + comptes utilisateurs + Edge Function), Google Gemini ou Azure OpenAI pour l'assistant IA, React Router pour les pages, Vitest pour les tests.
 
 📘 **Pour comprendre comment le site est construit** (architecture, technologies, sécurité, modèle de données,
 ajout d'une fonctionnalité), lis [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

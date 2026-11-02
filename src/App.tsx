@@ -3,6 +3,8 @@ import Layout from './components/Layout'
 import { isSupabaseConfigured } from './lib/supabase'
 import { useSession } from './lib/useSession'
 import Dashboard from './pages/Dashboard'
+import Documents from './pages/Documents'
+import DocumentView from './pages/DocumentView'
 import Flashcards from './pages/Flashcards'
 import Login from './pages/Login'
 import Planning from './pages/Planning'
@@ -32,6 +34,8 @@ function AuthenticatedApp() {
             <Route path="matieres" element={<Subjects />} />
             <Route path="flashcards" element={<Flashcards />} />
             <Route path="reviser" element={<Review />} />
+            <Route path="documents" element={<Documents />} />
+            <Route path="documents/:id" element={<DocumentView />} />
             <Route path="planning" element={<Planning />} />
             <Route path="pomodoro" element={<Pomodoro />} />
             <Route path="*" element={<Navigate to="/" replace />} />

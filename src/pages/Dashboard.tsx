@@ -75,32 +75,28 @@ export default function Dashboard() {
       {error && <p className="error">{error}</p>}
 
       <div className="kpi-row">
-        <section className="card kpi">
+        <section className="card kpi kpi-yellow">
           <h2 className="kpi-label">Cartes à réviser aujourd’hui</h2>
           <p className="kpi-value">{show(dueCards)}</p>
           {!loading &&
             (dueCards > 0 ? (
-              <Link className="btn btn-primary btn-small" to="/reviser">
-                Commencer la révision
+              <Link className="btn btn-small" to="/reviser">
+                Commencer la révision →
               </Link>
             ) : (
               <p className="kpi-note">Tout est à jour.</p>
             ))}
         </section>
-        <section className="card kpi">
+        <section className="card kpi kpi-pink">
           <h2 className="kpi-label">Tâches pour aujourd’hui</h2>
           <p className="kpi-value">{show(todayTasks.length + lateTasks.length)}</p>
           {!loading && (
             <p className="kpi-note">
-              {lateTasks.length > 0 ? (
-                <span className="danger-text">⚠ dont {lateTasks.length} en retard</span>
-              ) : (
-                'Aucune en retard'
-              )}
+              {lateTasks.length > 0 ? `⚠ dont ${lateTasks.length} en retard !` : 'Aucune en retard'}
             </p>
           )}
         </section>
-        <section className="card kpi">
+        <section className="card kpi kpi-blue">
           <h2 className="kpi-label">Temps d’étude cette semaine</h2>
           <p className="kpi-value">{show(formatDuration(totalMinutes))}</p>
           {!loading && (

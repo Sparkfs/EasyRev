@@ -5,6 +5,7 @@ import { formatClock, phaseLabel, usePomodoro } from '../pomodoro/usePomodoro'
 const LINKS = [
   { to: '/', label: 'Tableau de bord' },
   { to: '/matieres', label: 'Matières' },
+  { to: '/documents', label: 'Documents IA' },
   { to: '/flashcards', label: 'Flashcards' },
   { to: '/planning', label: 'Planning' },
   { to: '/pomodoro', label: 'Pomodoro' },

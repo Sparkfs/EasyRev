@@ -75,8 +75,11 @@ Ce modèle s'appelle **SPA + Backend-as-a-Service** :
 | **React Router** | 8 | Associer une adresse (`/planning`…) à une page | `src/App.tsx`, `src/components/Layout.tsx` |
 | **Vite** | 8 | Serveur de développement et fabrication de la version finale | `vite.config.ts`, `index.html` |
 | **Supabase** (`@supabase/supabase-js`) | 2 | Comptes, base PostgreSQL, API | `src/lib/supabase.ts`, `supabase/schema.sql` |
+| **Supabase Edge Functions** (Deno) | — | Petit code serveur qui appelle l'IA en gardant la clé secrète | `supabase/functions/study-assistant/` |
+| **Google Gemini** ou **Azure OpenAI** | — | L'IA qui explique les documents et rédige les questions | voir [ASSISTANT-IA.md](ASSISTANT-IA.md) |
+| **pdf.js** (`pdfjs-dist`) / **mammoth** | 6 / 1 | Lire le texte des PDF / des fichiers Word dans le navigateur | `src/lib/extractText.ts` |
 | **CSS** (sans framework) | — | Apparence, mode sombre, version téléphone | `src/index.css` |
-| **Vitest** | 5 | Tests automatiques | `src/lib/srs.test.ts` |
+| **Vitest** | 5 | Tests automatiques | `src/lib/*.test.ts` |
 | **oxlint** | 1 | Linter : repère les erreurs courantes | `.oxlintrc.json` |
 | **npm** / **Node.js** | 11 / 24 | Installer les bibliothèques, lancer les commandes | `package.json`, `package-lock.json` |
 
@@ -180,9 +183,14 @@ site-etude/
 │   ├── favicon.svg             Icône de l'onglet
 │   └── _redirects              Réglage pour l'hébergement sur Netlify
 ├── supabase/
-│   └── schema.sql              Tables + règles de sécurité (à exécuter dans Supabase)
+│   ├── schema.sql              Tables + règles de sécurité (à exécuter dans Supabase)
+│   ├── documents.sql           Tables de l'assistant IA (à exécuter après schema.sql)
+│   └── functions/
+│       └── study-assistant/
+│           └── index.ts        Edge Function : appelle l'IA (Gemini ou Azure)
 ├── docs/
-│   └── ARCHITECTURE.md         Ce document
+│   ├── ARCHITECTURE.md         Ce document
+│   └── ASSISTANT-IA.md         Fonctionnement et installation de l'assistant IA
 └── src/
     ├── main.tsx                Point d'entrée : affiche <App /> dans la page
     ├── App.tsx                 Choix de l'écran (aide / connexion / site) et liste des routes
@@ -191,9 +199,13 @@ site-etude/
     ├── components/             Morceaux d'interface réutilisés
     │   ├── Layout.tsx          En-tête, menu, bouton Déconnexion, mini-minuteur
     │   ├── SubjectSelect.tsx   Liste déroulante des matières
-    │   └── SubjectTag.tsx      Étiquette colorée d'une matière
+    │   ├── SubjectTag.tsx      Étiquette colorée d'une matière
+    │   ├── StatusBadge.tsx     État d'un document (en cours / prêt / erreur)
+    │   └── QuestionCard.tsx    Question interactive (QCM, vrai/faux, réponse rédigée)
     ├── pages/                  Un fichier par écran
     │   ├── Dashboard.tsx       Tableau de bord
+    │   ├── Documents.tsx       Envoi et liste des documents (assistant IA)
+    │   ├── DocumentView.tsx    Explication et questions d'un document
     │   ├── Subjects.tsx        Matières
     │   ├── Flashcards.tsx      Création et liste des flashcards
     │   ├── Review.tsx          Séance de révision
@@ -210,6 +222,9 @@ site-etude/
         ├── useSubjects.ts      Chargement des matières
         ├── srs.ts              Algorithme de répétition espacée
         ├── srs.test.ts         Tests de srs.ts et dates.ts
+        ├── assistant.ts        Appel de l'assistant IA, conversion question → flashcard
+        ├── assistant.test.ts   Tests de assistant.ts et extractText.ts
+        ├── extractText.ts      Lecture du texte des PDF, Word et .txt
         ├── dates.ts            Calcul et affichage des dates
         ├── colors.ts           Couleurs proposées pour les matières
         └── types.ts            Forme des données de chaque table
@@ -509,14 +524,20 @@ qui se comparent correctement dans l'ordre alphabétique.
 
 ## 9. Interface et style
 
+- **Style « néo-brutal »**, choisi parmi six pistes : bordures noires épaisses (3 px), ombres décalées sans flou,
+  angles droits, couleurs franches (jaune, rose, bleu, vert, orange), titres en majuscules très gras.
+  Police **Archivo** (Google Fonts, chargée dans `index.html`).
 - **Un seul fichier CSS** (`src/index.css`), sans framework, organisé par sections : couleurs, base, structure,
-  blocs, texte, boutons, formulaires, listes, tableau de bord, révision, Pomodoro.
-- **Variables CSS** (`--bg`, `--text`, `--accent`…) définies en haut du fichier. Les composants n'utilisent que
-  ces variables, jamais de couleur en dur.
-- **Mode sombre automatique** : `@media (prefers-color-scheme: dark)` redéfinit les variables selon le réglage
-  du système.
-- **Version téléphone** : sous 760 px de large, le menu passe sur sa propre ligne et les formulaires s'empilent ;
-  sous 560 px, les boutons de notation passent sur deux lignes.
+  blocs, texte, boutons, formulaires, listes, tableau de bord, révision, Pomodoro, documents.
+- **Variables CSS** définies en haut du fichier : `--bg`, `--surface`, `--text`, `--ink` (bordures et ombres),
+  les couleurs franches (`--yellow`, `--pink`…), `--border`, `--shadow`… Les composants n'utilisent que ces
+  variables. Sur une couleur franche, le texte est toujours foncé (`--on-color`), dans les deux modes.
+- **Mode sombre automatique** : `@media (prefers-color-scheme: dark)` inverse le fond et l'encre (bordures et
+  ombres claires sur fond noir) ; les blocs colorés gardent leurs couleurs.
+- **Boutons** : ils « s'enfoncent » au clic (`transform` + ombre réduite), comme un vrai bouton.
+- **Version téléphone** : sous 860 px de large, le menu passe sur sa propre ligne ; sous 760 px, les formulaires
+  s'empilent ; sous 600 px, les boutons de notation passent sur deux lignes ; sous 520 px, les barres du temps
+  d'étude passent sous le nom de la matière.
 - **Accessibilité** :
   - chaque champ a une étiquette (`<label>`) ;
   - le contour du focus est visible au clavier ;

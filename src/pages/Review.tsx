@@ -102,6 +102,19 @@ export default function Review() {
 
       {error && <p className="error">{error}</p>}
 
+      {current && (
+        <div
+          className="review-progress"
+          role="progressbar"
+          aria-label="Avancement de la révision"
+          aria-valuemin={0}
+          aria-valuemax={reviewedCount + queue.length}
+          aria-valuenow={reviewedCount}
+        >
+          <div style={{ width: `${(reviewedCount / (reviewedCount + queue.length)) * 100}%` }} />
+        </div>
+      )}
+
       {loading ? (
         <p className="muted">Chargement…</p>
       ) : !current ? (
@@ -135,7 +148,9 @@ export default function Review() {
                   onClick={() => rate(grade)}
                   title={`Raccourci : ${key}`}
                 >
-                  <span>{label}</span>
+                  <span>
+                    {key} · {label}
+                  </span>
                   <span className="grade-interval">{intervalLabel(schedule(current, grade).interval_days)}</span>
                 </button>
               ))}
