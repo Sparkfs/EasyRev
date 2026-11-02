@@ -144,6 +144,11 @@ Supabase → **Edge Functions** → **Secrets** (ou **Project Settings → Edge 
 | `AI_PROVIDER` | `gemini` |
 | `GEMINI_API_KEY` | ta clé Google AI Studio |
 | `GEMINI_MODEL` | *facultatif*, par défaut `gemini-3.8-flash` |
+| `GEMINI_FALLBACK_MODEL` | *facultatif*, modèle de secours si le premier est saturé ou a atteint son quota, par défaut `gemini-3.6-flash` |
+
+En cas de surcharge passagère de Google (erreurs 500/503), la fonction réessaie toute seule après 2 puis
+5 secondes, puis passe au modèle de secours ; en cas de quota atteint (429), elle passe directement au modèle de
+secours.
 
 **Avec Azure OpenAI (option B) :**
 
@@ -209,7 +214,8 @@ Le message d'erreur s'affiche sur la page du document, avec un bouton **Relancer
 | « Azure OpenAI a répondu 429 » | Quota dépassé (trop de demandes) | Attends une minute, ou augmente le quota du déploiement dans Foundry |
 | « Gemini a répondu 400 / 403 » + « API key » | Clé Gemini invalide | Recopie la clé dans `GEMINI_API_KEY` |
 | « Gemini a répondu 404 » | Nom de modèle inconnu | Vérifie `GEMINI_MODEL` (ou supprime-le pour garder le modèle par défaut) |
-| « Gemini a répondu 429 » | Limite gratuite atteinte (par minute ou par jour) | Attends une minute, ou le lendemain ; choisis moins de questions |
+| « Limite de l'offre gratuite de Gemini atteinte » (429) | Quota gratuit épuisé sur les deux modèles (par minute ou par jour) | Attends une minute, ou le lendemain ; analyse moins de pages |
+| « Les serveurs de Gemini sont saturés » (500 / 503) | Surcharge passagère chez Google, même après les nouveaux essais et le modèle de secours | Relance dans quelques minutes |
 | « …400… response_format… » | Le modèle ne gère pas les *structured outputs* | Déploie un modèle récent (gpt-4.1-mini, gpt-4o-mini…) |
 | « La réponse de l'IA a été coupée » | Trop de questions demandées | Choisis moins de questions |
 

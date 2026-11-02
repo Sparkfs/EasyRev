@@ -11,6 +11,7 @@
 // Pour Gemini :
 //   GEMINI_API_KEY           la clé créée sur Google AI Studio
 //   GEMINI_MODEL             facultatif, par défaut gemini-3.8-flash
+//   GEMINI_FALLBACK_MODEL    facultatif, modèle de secours si le premier est saturé, par défaut gemini-3.6-flash
 // Pour Azure OpenAI :
 //   AZURE_OPENAI_ENDPOINT    ex. https://mon-ressource.openai.azure.com
 //   AZURE_OPENAI_API_KEY     la clé de la ressource Azure (KEY 1)
@@ -29,6 +30,8 @@ const CORS_HEADERS = {
 const MAX_CHARACTERS = 400_000
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
+/** Utilisé si le modèle principal est saturé ou a atteint son quota (génération précédente, souvent moins demandée). */
+const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.6-flash'
 
 /** Fournisseur choisi : AI_PROVIDER s'il est défini, sinon Gemini dès qu'une clé Gemini existe. */
 function provider(): 'gemini' | 'azure' {
@@ -191,16 +194,52 @@ async function askModel(
   return JSON.parse(choice.message.content)
 }
 
+/**
+ * Appelle Gemini en résistant aux surcharges passagères de Google :
+ * - serveurs saturés (500, 503) : nouvel essai après 2 puis 5 secondes ;
+ * - toujours saturés, ou quota du modèle atteint (429) : on passe au modèle de secours.
+ * Les autres erreurs (clé invalide, modèle inconnu…) sont signalées tout de suite.
+ */
 async function callGemini(body: object): Promise<Response> {
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('GEMINI_API_KEY')}` },
-    body: JSON.stringify({ model: Deno.env.get('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL, ...body }),
-  })
-  if (!response.ok) {
-    throw new Error(`Gemini a répondu ${response.status} : ${(await response.text()).slice(0, 400)}`)
+  const models = [
+    ...new Set([
+      Deno.env.get('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL,
+      Deno.env.get('GEMINI_FALLBACK_MODEL') || DEFAULT_GEMINI_FALLBACK_MODEL,
+    ]),
+  ]
+  let lastStatus = 0
+  let lastDetail = ''
+
+  for (const model of models) {
+    for (const delay of [0, 2000, 5000]) {
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('GEMINI_API_KEY')}` },
+        body: JSON.stringify({ model, ...body }),
+      })
+      if (response.ok) return response
+
+      lastStatus = response.status
+      lastDetail = (await response.text()).slice(0, 300)
+      console.warn(`Gemini (${model}) a répondu ${lastStatus}`)
+      if (lastStatus === 429) break // quota de ce modèle : réessayer tout de suite ne sert à rien
+      if (lastStatus !== 500 && lastStatus !== 503) {
+        throw new Error(`Gemini a répondu ${lastStatus} : ${lastDetail}`)
+      }
+    }
   }
-  return response
+
+  if (lastStatus === 429) {
+    throw new Error(
+      'Limite de l’offre gratuite de Gemini atteinte (trop de demandes en peu de temps, ou quota du jour épuisé). ' +
+        'Relance dans une minute ; si ça persiste, réessaie demain ou analyse moins de pages.',
+    )
+  }
+  throw new Error(
+    'Les serveurs de Gemini sont saturés en ce moment : le problème vient de Google, pas de toi. ' +
+      `Relance l’analyse dans quelques minutes. (Détail : erreur ${lastStatus})`,
+  )
 }
 
 async function callAzure(body: object): Promise<Response> {

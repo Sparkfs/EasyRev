@@ -985,7 +985,7 @@ input[type='file'] {
 
 .page-range {
   display: grid;
-  grid-template-columns: repeat(2, minmax(110px, 180px));
+  grid-template-columns: minmax(110px, 180px) minmax(110px, 180px) 1fr;
   gap: 6px 14px;
   align-items: end;
 }
