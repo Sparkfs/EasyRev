@@ -39,6 +39,7 @@ Navigateur                                  Supabase                            
 | Appel de la fonction, conversion en flashcard | `src/lib/assistant.ts` |
 | Pages | `src/pages/Documents.tsx`, `src/pages/DocumentView.tsx` |
 | Carte de question interactive | `src/components/QuestionCard.tsx` |
+| Conversation avec l'IA sur un document | `src/components/DocumentChat.tsx` (table `document_messages`) |
 
 **Deux fournisseurs possibles.** Gemini et Azure OpenAI acceptent le même format de demande (« chat
 completions » d'OpenAI) : la fonction n'a qu'à changer d'adresse et de clé. Le secret `AI_PROVIDER` choisit
@@ -77,6 +78,7 @@ Les tables `documents` et `questions` apparaissent dans **Table Editor**.
 `supabase/mise-a-jour-*.sql` (par ordre de numéro). Ils sont sans danger s'ils ont déjà été appliqués.
 
 - `mise-a-jour-1-reflexion.sql` : colonne `reasoning_effort` (réflexion de l'IA choisie pour chaque document).
+- `mise-a-jour-2-conversation.sql` : table `document_messages` (conversation avec l'IA sur chaque document).
 
 ### Étape 2 (option A, conseillée) : obtenir une clé Google Gemini gratuite
 
@@ -179,6 +181,25 @@ Pour passer d'un fournisseur à l'autre plus tard, il suffit de changer `AI_PROV
 
 Sur le site → **Documents IA** → envoie un petit cours → **Analyser avec l'IA**.
 Après 30 secondes à 2 minutes, l'explication et les questions apparaissent.
+
+---
+
+## Poser des questions à l'IA sur un document
+
+L'onglet **« Demander à l'IA »** de la page d'un document ouvre une conversation. Les boutons **« Je ne comprends pas
+cette partie »** (sur l'explication) et **« Je ne comprends pas ce corrigé »** (sur les questions) ouvrent cet onglet
+avec une question déjà préparée, que l'on peut compléter avant de l'envoyer.
+
+- **Ce que reçoit l'IA** : le texte du document, l'explication déjà donnée, les 10 derniers messages et la question.
+  Chaque question renvoie donc le document entier à l'IA, ce qui compte dans le quota de Gemini : un très long
+  document consomme plus de quota à chaque question.
+- **Réponse immédiate** : contrairement à l'analyse, la fonction attend la réponse de l'IA avant de répondre au site
+  (`{ ask_document_id, question }` → `{ messages }`). La réflexion utilisée est celle du document.
+- **Conversation enregistrée** : la question et la réponse sont ajoutées à `document_messages` une fois la réponse
+  obtenue. En cas d'erreur, rien n'est enregistré et le site rend la question pour pouvoir réessayer.
+- **Documents analysés dans claude.ai** : leur texte n'est pas dans le site, l'IA ne connaît donc que leur explication.
+- **La clé `ask_document_id`** est volontairement différente de `document_id` : si la fonction déployée n'est pas à
+  jour, elle refuse la demande (et le site affiche « redéploie la fonction ») au lieu de relancer toute l'analyse.
 
 ---
 

@@ -8,11 +8,13 @@ interface Props {
   /** Appelé une fois que l'élève a répondu : juste ou non. */
   onResult: (correct: boolean) => void
   onAddFlashcard: () => void
+  /** Ouvre la conversation avec l'IA pour faire expliquer ce corrigé. */
+  onAskHelp: () => void
 }
 
 // Une question interactive : QCM et vrai/faux sont corrigés automatiquement ;
 // pour les autres types, l'élève écrit sa réponse, découvre le corrigé et s'auto-évalue.
-export default function QuestionCard({ question, number, onResult, onAddFlashcard }: Props) {
+export default function QuestionCard({ question, number, onResult, onAddFlashcard, onAskHelp }: Props) {
   const [picked, setPicked] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
   const [revealed, setRevealed] = useState(false)
@@ -118,6 +120,11 @@ export default function QuestionCard({ question, number, onResult, onAddFlashcar
                 {selfGrade ? '✓ Bien joué !' : '✗ À revoir : ajoute-la à tes flashcards.'}
               </p>
             ))}
+          <div>
+            <button type="button" className="btn btn-small" onClick={onAskHelp}>
+              Je ne comprends pas ce corrigé
+            </button>
+          </div>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import SubjectSelect from '../components/SubjectSelect'
 import StatusBadge from '../components/StatusBadge'
 import SubjectTag from '../components/SubjectTag'
 import { DEFAULT_EFFORT, MAX_QUESTIONS_FOR_HIGH_EFFORT, startAnalysis } from '../lib/assistant'
-import { buildClaudePrompt, CLAUDE_URL, parseClaudeAnswer } from '../lib/claudeImport'
+import { buildClaudePrompt, CLAUDE_PLACEHOLDER, CLAUDE_URL, parseClaudeAnswer } from '../lib/claudeImport'
 import { formatDay, toISODate } from '../lib/dates'
 import {
   ACCEPTED_FILES,
@@ -34,8 +34,6 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'claude', label: 'Avec mon abonnement Claude' },
 ]
 
-/** Contenu enregistré pour un document analysé dans claude.ai (son texte n'arrive pas jusqu'au site). */
-const CLAUDE_PLACEHOLDER = 'Document analysé directement dans Claude (claude.ai) : son texte n’a pas été importé.'
 
 export default function Documents() {
   const { subjects, loading: subjectsLoading } = useSubjects()

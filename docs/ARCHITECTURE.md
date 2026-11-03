@@ -185,6 +185,7 @@ site-etude/
 ├── supabase/
 │   ├── schema.sql              Tables + règles de sécurité (à exécuter dans Supabase)
 │   ├── documents.sql           Tables de l'assistant IA (à exécuter après schema.sql)
+│   ├── mise-a-jour-*.sql       Changements de la base, pour une installation déjà en place
 │   └── functions/
 │       └── study-assistant/
 │           └── index.ts        Edge Function : appelle l'IA (Gemini ou Azure)
@@ -201,7 +202,8 @@ site-etude/
     │   ├── SubjectSelect.tsx   Liste déroulante des matières
     │   ├── SubjectTag.tsx      Étiquette colorée d'une matière
     │   ├── StatusBadge.tsx     État d'un document (en cours / prêt / erreur)
-    │   └── QuestionCard.tsx    Question interactive (QCM, vrai/faux, réponse rédigée)
+    │   ├── QuestionCard.tsx    Question interactive (QCM, vrai/faux, réponse rédigée)
+    │   └── DocumentChat.tsx    Conversation avec l'IA à propos d'un document
     ├── pages/                  Un fichier par écran
     │   ├── Dashboard.tsx       Tableau de bord
     │   ├── Documents.tsx       Envoi et liste des documents (assistant IA)

@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import DocumentChat from '../components/DocumentChat'
 import EffortSelect from '../components/EffortSelect'
 import QuestionCard from '../components/QuestionCard'
 import StatusBadge from '../components/StatusBadge'
 import SubjectTag from '../components/SubjectTag'
-import { DEFAULT_EFFORT, effortLabel, KIND_LABELS, questionToFlashcard, startAnalysis } from '../lib/assistant'
+import {
+  correctionHelpQuestion,
+  DEFAULT_EFFORT,
+  effortLabel,
+  KIND_LABELS,
+  questionToFlashcard,
+  sectionHelpQuestion,
+  startAnalysis,
+} from '../lib/assistant'
+import { CLAUDE_PLACEHOLDER } from '../lib/claudeImport'
 import { today } from '../lib/dates'
 import { supabase } from '../lib/supabase'
 import type { Question, QuestionKind, ReasoningEffort, StudyDocument } from '../lib/types'
@@ -22,7 +32,9 @@ export default function DocumentView() {
   const [doc, setDoc] = useState<StudyDocument | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'explication' | 'questions'>('explication')
+  const [tab, setTab] = useState<'explication' | 'questions' | 'conversation'>('explication')
+  // Question en cours d'écriture : gardée ici car les boutons « Je ne comprends pas » la préparent.
+  const [chatDraft, setChatDraft] = useState('')
   const [kindFilter, setKindFilter] = useState<QuestionKind | ''>('')
   // Résultats de l'entraînement en cours : id de la question → juste ou non.
   const [results, setResults] = useState<Record<string, boolean>>({})
@@ -101,6 +113,12 @@ export default function DocumentView() {
   function restartPractice() {
     setResults({})
     setReloadKey((k) => k + 1)
+  }
+
+  /** Ouvre la conversation avec une question déjà préparée, que l'élève peut compléter avant de l'envoyer. */
+  function askForHelp(question: string) {
+    setChatDraft(question)
+    setTab('conversation')
   }
 
   const subject = subjects.find((s) => s.id === doc?.subject_id)
@@ -217,98 +235,121 @@ export default function DocumentView() {
         >
           Questions <span className="count">{questions.length}</span>
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'conversation'}
+          className={tab === 'conversation' ? 'tab active' : 'tab'}
+          onClick={() => setTab('conversation')}
+        >
+          Demander à l’IA
+        </button>
       </div>
 
-      {tab === 'explication' ? (
-        <>
-          {doc.summary && (
-            <section className="card stack">
-              <h2>En bref</h2>
-              <p className="pre-wrap">{doc.summary}</p>
-            </section>
-          )}
-          {doc.key_points && doc.key_points.length > 0 && (
-            <section className="card">
-              <h2>Les notions clés</h2>
-              <ul className="key-points">
-                {doc.key_points.map((point, i) => (
-                  <li key={i}>{point}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {doc.sections?.map((section, i) => (
-            <section key={i} className="card stack prose">
-              <h2>{section.title}</h2>
-              {section.content.split(/\n\s*\n/).map((paragraph, j) => (
-                <p key={j} className="pre-wrap">
-                  {paragraph}
-                </p>
+      {/* Les onglets restent montés : on garde les réponses déjà données en changeant d'onglet. */}
+      <div className="tab-panel" role="tabpanel" hidden={tab !== 'explication'}>
+        {doc.summary && (
+          <section className="card stack">
+            <h2>En bref</h2>
+            <p className="pre-wrap">{doc.summary}</p>
+          </section>
+        )}
+        {doc.key_points && doc.key_points.length > 0 && (
+          <section className="card">
+            <h2>Les notions clés</h2>
+            <ul className="key-points">
+              {doc.key_points.map((point, i) => (
+                <li key={i}>{point}</li>
               ))}
-            </section>
-          ))}
-          {doc.glossary && doc.glossary.length > 0 && (
-            <section className="card">
-              <h2>Vocabulaire</h2>
-              <dl className="glossary">
-                {doc.glossary.map((entry, i) => (
-                  <div key={i}>
-                    <dt>{entry.term}</dt>
-                    <dd>{entry.definition}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          )}
-          <div className="center">
-            <button className="btn btn-primary btn-large" onClick={() => setTab('questions')}>
-              Passer aux questions →
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="toolbar">
-            <select
-              value={kindFilter}
-              onChange={(e) => setKindFilter(e.target.value as QuestionKind | '')}
-              aria-label="Type de questions"
-            >
-              <option value="">Tous les types</option>
-              {kindsPresent.map((kind) => (
-                <option key={kind} value={kind}>
-                  {KIND_LABELS[kind]}
-                </option>
-              ))}
-            </select>
-            <div className="row">
-              <span className="score">
-                Score : {correct} / {answered}
-              </span>
-              <button className="btn btn-ghost btn-small" onClick={restartPractice} disabled={answered === 0}>
-                Recommencer
-              </button>
-              <button
-                className="btn btn-small"
-                onClick={() => addToFlashcards(visibleQuestions)}
-                disabled={visibleQuestions.every((q) => q.added_to_flashcards)}
-              >
-                + Tout ajouter aux flashcards
+            </ul>
+          </section>
+        )}
+        {doc.sections?.map((section, i) => (
+          <section key={i} className="card stack prose">
+            <h2>{section.title}</h2>
+            {section.content.split(/\n\s*\n/).map((paragraph, j) => (
+              <p key={j} className="pre-wrap">
+                {paragraph}
+              </p>
+            ))}
+            <div>
+              <button className="btn btn-small" onClick={() => askForHelp(sectionHelpQuestion(section.title))}>
+                Je ne comprends pas cette partie
               </button>
             </div>
-          </div>
+          </section>
+        ))}
+        {doc.glossary && doc.glossary.length > 0 && (
+          <section className="card">
+            <h2>Vocabulaire</h2>
+            <dl className="glossary">
+              {doc.glossary.map((entry, i) => (
+                <div key={i}>
+                  <dt>{entry.term}</dt>
+                  <dd>{entry.definition}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+        <div className="center">
+          <button className="btn btn-primary btn-large" onClick={() => setTab('questions')}>
+            Passer aux questions →
+          </button>
+        </div>
+      </div>
 
-          {visibleQuestions.map((question) => (
-            <QuestionCard
-              key={`${question.id}-${reloadKey}`}
-              question={question}
-              number={questions.indexOf(question) + 1}
-              onResult={(isCorrect) => setResults((r) => ({ ...r, [question.id]: isCorrect }))}
-              onAddFlashcard={() => addToFlashcards([question])}
-            />
-          ))}
-        </>
-      )}
+      <div className="tab-panel" role="tabpanel" hidden={tab !== 'questions'}>
+        <div className="toolbar">
+          <select
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value as QuestionKind | '')}
+            aria-label="Type de questions"
+          >
+            <option value="">Tous les types</option>
+            {kindsPresent.map((kind) => (
+              <option key={kind} value={kind}>
+                {KIND_LABELS[kind]}
+              </option>
+            ))}
+          </select>
+          <div className="row">
+            <span className="score">
+              Score : {correct} / {answered}
+            </span>
+            <button className="btn btn-ghost btn-small" onClick={restartPractice} disabled={answered === 0}>
+              Recommencer
+            </button>
+            <button
+              className="btn btn-small"
+              onClick={() => addToFlashcards(visibleQuestions)}
+              disabled={visibleQuestions.every((q) => q.added_to_flashcards)}
+            >
+              + Tout ajouter aux flashcards
+            </button>
+          </div>
+        </div>
+
+        {visibleQuestions.map((question) => (
+          <QuestionCard
+            key={`${question.id}-${reloadKey}`}
+            question={question}
+            number={questions.indexOf(question) + 1}
+            onResult={(isCorrect) => setResults((r) => ({ ...r, [question.id]: isCorrect }))}
+            onAddFlashcard={() => addToFlashcards([question])}
+            onAskHelp={() => askForHelp(correctionHelpQuestion(question))}
+          />
+        ))}
+      </div>
+
+      <div className="tab-panel" role="tabpanel" hidden={tab !== 'conversation'}>
+        <DocumentChat
+          documentId={doc.id}
+          active={tab === 'conversation'}
+          draft={chatDraft}
+          onDraftChange={setChatDraft}
+          explanationOnly={doc.content === CLAUDE_PLACEHOLDER}
+        />
+      </div>
     </>
   )
 }

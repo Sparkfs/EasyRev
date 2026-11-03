@@ -1,6 +1,6 @@
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from './supabase'
-import type { Question, QuestionKind, ReasoningEffort } from './types'
+import type { DocumentMessage, Question, QuestionKind, ReasoningEffort } from './types'
 
 export const KIND_LABELS: Record<QuestionKind, string> = {
   qcm: 'QCM',
@@ -38,6 +38,46 @@ export async function startAnalysis(documentId: string): Promise<string | null> 
   // On l'inscrit sur le document pour que la page l'affiche, même après un rechargement.
   await supabase.from('documents').update({ status: 'error', error: message }).eq('id', documentId)
   return message
+}
+
+/** Même limite que dans l'Edge Function. */
+export const MAX_QUESTION_LENGTH = 2000
+
+/**
+ * Pose une question à l'IA sur un document. Renvoie la question et la réponse, enregistrées en base.
+ * La clé `ask_document_id` est volontairement distincte de `document_id` : une ancienne version de
+ * l'Edge Function refuse alors la demande au lieu de relancer l'analyse du document.
+ */
+export async function askAboutDocument(documentId: string, question: string): Promise<DocumentMessage[]> {
+  const { data, error } = await supabase.functions.invoke('study-assistant', {
+    body: { ask_document_id: documentId, question },
+  })
+  if (error) {
+    const message = await describeFunctionError(error)
+    throw new Error(
+      message === 'document_id manquant.'
+        ? 'L’assistant IA n’est pas à jour : redéploie la dernière version de la fonction « study-assistant » dans Supabase.'
+        : message,
+    )
+  }
+  return data.messages
+}
+
+function shorten(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength).trimEnd()}…`
+}
+
+/** Question préparée quand on ne comprend pas une partie de l'explication. */
+export function sectionHelpQuestion(title: string): string {
+  return `Je ne comprends pas la partie « ${shorten(title, 200)} ». Peux-tu me l’expliquer autrement, avec un exemple concret ?`
+}
+
+/** Question préparée quand on ne comprend pas le corrigé d'une question. */
+export function correctionHelpQuestion(question: Question): string {
+  return (
+    `Je ne comprends pas le corrigé de cette question : « ${shorten(question.prompt, 700)} » ` +
+    `(réponse : ${shorten(question.answer, 700)}). Peux-tu m’expliquer le raisonnement étape par étape ?`
+  )
 }
 
 async function describeFunctionError(error: unknown): Promise<string> {

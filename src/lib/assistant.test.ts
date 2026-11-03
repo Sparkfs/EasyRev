@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { effortLabel, questionToFlashcard } from './assistant'
+import {
+  correctionHelpQuestion,
+  effortLabel,
+  MAX_QUESTION_LENGTH,
+  questionToFlashcard,
+  sectionHelpQuestion,
+} from './assistant'
 import { cleanText } from './extractText'
 import type { Question } from './types'
 
@@ -42,6 +48,24 @@ describe('questionToFlashcard', () => {
   it('précise « Vrai ou faux » au recto', () => {
     const card = questionToFlashcard({ ...base, kind: 'vrai_faux', prompt: 'La Terre est plate.', answer: 'Faux' })
     expect(card.front).toBe('Vrai ou faux ? La Terre est plate.')
+  })
+})
+
+describe('questions préparées pour l’IA', () => {
+  it('cite la partie de l’explication', () => {
+    expect(sectionHelpQuestion('La torsion')).toContain('« La torsion »')
+  })
+
+  it('cite l’énoncé et la réponse du corrigé', () => {
+    const text = correctionHelpQuestion(base)
+    expect(text).toContain(base.prompt)
+    expect(text).toContain('Yaoundé')
+  })
+
+  it('reste sous la limite d’une question, même avec un très long corrigé', () => {
+    const long = 'x'.repeat(5000)
+    expect(correctionHelpQuestion({ ...base, prompt: long, answer: long }).length).toBeLessThanOrEqual(MAX_QUESTION_LENGTH)
+    expect(sectionHelpQuestion(long).length).toBeLessThanOrEqual(MAX_QUESTION_LENGTH)
   })
 })
 

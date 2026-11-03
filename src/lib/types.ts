@@ -63,6 +63,15 @@ export interface StudyDocument {
   created_at: string
 }
 
+/** Un message de la conversation avec l'IA à propos d'un document. */
+export interface DocumentMessage {
+  id: string
+  document_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
 export type QuestionKind = 'qcm' | 'vrai_faux' | 'courte' | 'trous' | 'ouverte'
 
 export interface Question {

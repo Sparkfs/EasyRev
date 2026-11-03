@@ -6,6 +6,9 @@ import type { Question, QuestionKind } from './types'
 
 export const CLAUDE_URL = 'https://claude.ai/new'
 
+/** Contenu enregistré pour un document analysé dans claude.ai (son texte n'arrive pas jusqu'au site). */
+export const CLAUDE_PLACEHOLDER = 'Document analysé directement dans Claude (claude.ai) : son texte n’a pas été importé.'
+
 const KINDS: QuestionKind[] = ['qcm', 'vrai_faux', 'courte', 'trous', 'ouverte']
 const DIFFICULTIES: Question['difficulty'][] = ['facile', 'moyen', 'difficile']
 
