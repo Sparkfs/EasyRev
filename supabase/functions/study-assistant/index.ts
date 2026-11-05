@@ -4,6 +4,10 @@
 // demande à l'IA (Google Gemini ou Azure OpenAI) une explication et des questions, puis enregistre
 // le résultat dans les tables `documents` et `questions` (voir supabase/documents.sql).
 //
+// Une exécution de la fonction est limitée à 150 secondes. En réflexion approfondie, les questions sont donc
+// préparées par séries : chaque étape enregistre sa série, puis la fonction se rappelle elle-même pour la suivante,
+// avec { document_id, step, run } et de nouveau 150 secondes.
+//
 // Secrets à définir dans Supabase (Edge Functions → Secrets) :
 //   AI_PROVIDER              « gemini » ou « azure » (facultatif : déduit des secrets présents)
 //   AI_REASONING_EFFORT      facultatif : low, medium ou high (temps de réflexion du modèle), utilisé quand le
@@ -28,6 +32,9 @@ const CORS_HEADERS = {
 
 /** Au-delà, le texte est coupé (environ 160 pages de cours). Même limite que dans le site (extractText.ts). */
 const MAX_CHARACTERS = 400_000
+
+/** Réflexion approfondie : nombre maximal de questions par étape, pour rester dans les 150 secondes. */
+const MAX_QUESTIONS_PER_STEP_HIGH_EFFORT = 8
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
 /** Utilisé si le modèle principal est saturé ou a atteint son quota (génération précédente, souvent moins demandée). */
@@ -65,12 +72,19 @@ Deno.serve(async (req) => {
   if (!userData.user) return json({ error: 'Connexion requise.' }, 401)
 
   let documentId: unknown
+  let step: unknown = 0
+  let run: unknown
   try {
-    documentId = (await req.json()).document_id
+    const body = await req.json()
+    documentId = body.document_id
+    step = body.step ?? 0
+    run = body.run
   } catch {
     // corps absent ou invalide : traité juste en dessous
   }
   if (typeof documentId !== 'string') return json({ error: 'document_id manquant.' }, 400)
+  if (!Number.isInteger(step) || (step as number) < 0) return json({ error: 'Étape invalide.' }, 400)
+  if ((step as number) > 0 && typeof run !== 'string') return json({ error: 'Analyse non précisée.' }, 400)
 
   const { data: doc, error } = await supabase
     .from('documents')
@@ -82,14 +96,28 @@ Deno.serve(async (req) => {
   }
   if (error || !doc) return json({ error: 'Document introuvable.' }, 404)
 
-  await supabase
-    .from('documents')
-    .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
-    .eq('id', doc.id)
+  let stamp: string | null
+  if (step === 0) {
+    // Nouvelle analyse : elle remplace les anciennes questions. Son horodatage arrête aussi une analyse encore en cours.
+    stamp = new Date().toISOString()
+    await supabase
+      .from('documents')
+      .update({ status: 'pending', error: null, updated_at: stamp })
+      .eq('id', doc.id)
+    await supabase.from('questions').delete().eq('document_id', doc.id)
+  } else {
+    stamp = await claimRun(supabase, doc.id, run as string)
+    if (!stamp) return json({ ok: true, ignored: true }) // une analyse plus récente a pris le relais
+  }
+
+  const next: NextStepRequest = {
+    authorization,
+    apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? req.headers.get('apikey') ?? '',
+  }
 
   // L'analyse peut prendre une minute : on répond tout de suite et on continue en arrière-plan.
   // La page du document suit l'avancement grâce à la colonne `status`.
-  EdgeRuntime.waitUntil(analyse(supabase, doc as DocumentRow))
+  EdgeRuntime.waitUntil(analyse(supabase, doc as DocumentRow, step as number, stamp, next))
   return json({ ok: true }, 202)
 })
 
@@ -104,12 +132,54 @@ interface DocumentRow {
 
 const EFFORTS = ['low', 'medium', 'high']
 
-async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
+interface NextStepRequest {
+  authorization: string
+  apikey: string
+}
+
+/** Répartit les questions en séries les plus égales possibles (ex. : 30 par 8 → 8, 8, 7, 7). */
+function questionBatches(total: number, maxPerBatch: number): number[] {
+  const count = Math.ceil(total / maxPerBatch)
+  return Array.from({ length: count }, (_, i) => Math.floor(total / count) + (i < total % count ? 1 : 0))
+}
+
+/**
+ * Renouvelle l'horodatage de l'analyse, seulement si `run` est toujours le sien.
+ * Renvoie le nouvel horodatage, ou `null` si une analyse plus récente a pris le relais.
+ * Le renouveler à chaque étape indique aussi à la page que l'analyse progresse.
+ */
+async function claimRun(supabase: SupabaseClient, documentId: string, run: string): Promise<string | null> {
+  const stamp = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ updated_at: stamp })
+    .eq('id', documentId)
+    .eq('status', 'pending')
+    .eq('updated_at', run)
+    .select('id')
+  if (error) throw new Error(`Erreur base de données : ${error.message}`)
+  return data && data.length > 0 ? stamp : null
+}
+
+async function analyse(
+  supabase: SupabaseClient,
+  doc: DocumentRow,
+  step: number,
+  startStamp: string,
+  next: NextStepRequest,
+) {
+  let stamp = startStamp
   try {
     // Réflexion choisie pour ce document, sinon le réglage par défaut (secret AI_REASONING_EFFORT).
     const effort = EFFORTS.includes(doc.reasoning_effort ?? '')
       ? doc.reasoning_effort!
       : Deno.env.get('AI_REASONING_EFFORT') || undefined
+
+    const batches = questionBatches(
+      doc.question_count,
+      effort === 'high' ? MAX_QUESTIONS_PER_STEP_HIGH_EFFORT : doc.question_count,
+    )
+    if (step >= batches.length) throw new Error('Étape d’analyse inconnue. Relance l’analyse.')
 
     const context = [
       `Matière : ${doc.subjects?.name ?? 'non précisée'}`,
@@ -120,35 +190,81 @@ async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
       '--- FIN DU DOCUMENT ---',
     ].join('\n')
 
-    // Deux demandes en parallèle : c'est deux fois plus rapide qu'une seule grosse demande.
+    // Pour ne pas reposer les mêmes questions d'une série à l'autre.
+    let alreadyAsked: string[] = []
+    if (step > 0) {
+      const { data, error } = await supabase
+        .from('questions')
+        .select('prompt')
+        .eq('document_id', doc.id)
+        .order('position')
+      if (error) throw new Error(`Erreur base de données : ${error.message}`)
+      alreadyAsked = data.map((q) => q.prompt)
+    }
+
+    const askQuestions = askModel(
+      questionsInstructions(batches[step], step, batches.length, alreadyAsked),
+      context,
+      'questions',
+      QUESTIONS_SCHEMA,
+      effort,
+    ) as Promise<{ questions: GeneratedQuestion[] }>
+    // Première étape : l'explication en parallèle, c'est deux fois plus rapide qu'une seule grosse demande.
     const [explanation, quiz] = await Promise.all([
-      askModel(EXPLANATION_INSTRUCTIONS, context, 'explication', EXPLANATION_SCHEMA, effort) as Promise<Explanation>,
-      askModel(questionsInstructions(doc.question_count), context, 'questions', QUESTIONS_SCHEMA, effort) as Promise<{
-        questions: GeneratedQuestion[]
-      }>,
+      step === 0
+        ? (askModel(EXPLANATION_INSTRUCTIONS, context, 'explication', EXPLANATION_SCHEMA, effort) as Promise<Explanation>)
+        : null,
+      askQuestions,
     ])
 
-    const questions = quiz.questions.map(normalizeQuestion).filter((q) => q !== null)
+    const questions = quiz.questions
+      .slice(0, batches[step])
+      .map(normalizeQuestion)
+      .filter((q) => q !== null)
     if (questions.length === 0) throw new Error("L'IA n'a produit aucune question exploitable. Réessaie.")
 
-    await check(supabase.from('questions').delete().eq('document_id', doc.id))
+    // Relancée entre-temps ? Cette analyse s'arrête sans rien écrire.
+    const claimed = await claimRun(supabase, doc.id, stamp)
+    if (!claimed) return
+    stamp = claimed
+
+    const firstPosition = batches.slice(0, step).reduce((sum, size) => sum + size, 0)
     await check(
-      supabase.from('questions').insert(questions.map((q, position) => ({ ...q, document_id: doc.id, position }))),
+      supabase
+        .from('questions')
+        .insert(questions.map((q, i) => ({ ...q, document_id: doc.id, position: firstPosition + i }))),
     )
+
+    const isLastStep = step === batches.length - 1
     await check(
       supabase
         .from('documents')
         .update({
-          status: 'ready',
+          status: isLastStep ? 'ready' : 'pending',
           error: null,
-          summary: explanation.summary,
-          key_points: explanation.key_points,
-          sections: explanation.sections,
-          glossary: explanation.glossary,
-          updated_at: new Date().toISOString(),
+          updated_at: stamp,
+          ...(explanation
+            ? {
+                summary: explanation.summary,
+                key_points: explanation.key_points,
+                sections: explanation.sections,
+                glossary: explanation.glossary,
+              }
+            : {}),
         })
         .eq('id', doc.id),
     )
+
+    if (!isLastStep) {
+      const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/study-assistant`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: next.authorization, apikey: next.apikey },
+        body: JSON.stringify({ document_id: doc.id, step: step + 1, run: stamp }),
+      })
+      if (!response.ok) {
+        throw new Error(`Impossible de lancer la suite de l’analyse (erreur ${response.status}). Relance l’analyse.`)
+      }
+    }
   } catch (e) {
     console.error(e)
     const message = e instanceof Error ? e.message : String(e)
@@ -156,6 +272,7 @@ async function analyse(supabase: SupabaseClient, doc: DocumentRow) {
       .from('documents')
       .update({ status: 'error', error: message.slice(0, 600), updated_at: new Date().toISOString() })
       .eq('id', doc.id)
+      .eq('updated_at', stamp)
   }
 }
 
@@ -330,10 +447,24 @@ interface GeneratedQuestion {
   explanation: string
 }
 
-function questionsInstructions(count: number): string {
+/** Consigne propre à une série, quand les questions sont préparées en plusieurs fois. */
+function batchInstructions(batch: number, batchCount: number, alreadyAsked: string[]): string {
+  if (batchCount === 1) return ''
+  const asked = alreadyAsked.length > 0
+    ? `\nQuestions déjà posées, à ne pas répéter ni reformuler :\n${alreadyAsked.map((q) => `- ${q}`).join('\n')}\n`
+    : ''
+  return `
+L'entraînement est préparé en ${batchCount} séries et tu rédiges la série ${batch + 1}. Découpe mentalement le document
+en ${batchCount} parties égales et concentre-toi sur la partie ${batch + 1}. Le niveau monte d'une série à l'autre :
+adapte la difficulté à cette position dans l'entraînement.
+${asked}`
+}
+
+function questionsInstructions(count: number, batch = 0, batchCount = 1, alreadyAsked: string[] = []): string {
   return `Tu es un professeur qui prépare un entraînement pour un élève à partir d'un document de cours.
 Crée exactement ${count} questions variées, classées de la plus facile à la plus difficile. Elles doivent couvrir
 l'ensemble du document, du début à la fin : si le document est long, répartis-les entre ses chapitres.
+${batchInstructions(batch, batchCount, alreadyAsked)}
 
 Utilise ces cinq types (au moins une question de chaque type) :
 - "qcm" : 4 propositions plausibles dans "choices", une seule correcte. "correct_choice" est l'indice (0 à 3) de la bonne

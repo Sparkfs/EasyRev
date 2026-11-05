@@ -11,8 +11,8 @@ import type { Question, QuestionKind, ReasoningEffort, StudyDocument } from '../
 import { useSubjects } from '../lib/useSubjects'
 
 /**
- * Au-delà de ce délai sans nouvelle, on considère que l'analyse s'est interrompue
- * (l'Edge Function est arrêtée au bout de 150 secondes sur l'offre gratuite de Supabase).
+ * Au-delà de ce délai sans nouvelle, on considère que l'analyse s'est interrompue. L'Edge Function est arrêtée au bout
+ * de 150 secondes sur l'offre gratuite de Supabase, et chaque étape d'une analyse en plusieurs séries renouvelle `updated_at`.
  */
 const STUCK_AFTER_MS = 3 * 60_000
 
@@ -21,6 +21,8 @@ export default function DocumentView() {
   const { subjects } = useSubjects()
   const [doc, setDoc] = useState<StudyDocument | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
+  // Pendant l'analyse : nombre de questions déjà enregistrées.
+  const [preparedCount, setPreparedCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'explication' | 'questions'>('explication')
   const [kindFilter, setKindFilter] = useState<QuestionKind | ''>('')
@@ -46,6 +48,12 @@ export default function DocumentView() {
       setDoc(data)
       setNow(Date.now())
       if (data.status === 'pending') {
+        const { count } = await supabase
+          .from('questions')
+          .select('id', { count: 'exact', head: true })
+          .eq('document_id', id)
+        if (ignore) return
+        setPreparedCount(count ?? 0)
         timer = window.setTimeout(load, 4000)
       } else if (data.status === 'ready') {
         const response = await supabase.from('questions').select('*').eq('document_id', id).order('position')
@@ -78,6 +86,7 @@ export default function DocumentView() {
     }
     setDoc({ ...doc, reasoning_effort: effort, status: 'pending', error: null, updated_at: new Date().toISOString() })
     setRetryEffort(null)
+    setPreparedCount(0)
     await startAnalysis(doc.id)
     setReloadKey((k) => k + 1)
   }
@@ -153,8 +162,8 @@ export default function DocumentView() {
             <>
               <p className="big">L’analyse semble interrompue.</p>
               <p>
-                L’IA a sans doute manqué de temps (150 secondes maximum). Relance avec une réflexion plus rapide,
-                ou analyse moins de pages ou moins de questions.
+                L’IA a sans doute manqué de temps (150 secondes maximum par étape). Relance l’analyse ; si cela se
+                reproduit, choisis une réflexion plus rapide ou analyse moins de pages.
               </p>
               {error && <p className="error">{error}</p>}
               {retryControls}
@@ -165,10 +174,17 @@ export default function DocumentView() {
               <p className="big">L’assistant lit ton document…</p>
               <p>
                 Il prépare une explication et {doc.question_count} questions corrigées
-                {doc.reasoning_effort && ` (réflexion ${effortLabel(doc.reasoning_effort).toLowerCase()})`}. Cela
-                prend en général entre 30 secondes et 2 minutes et demie. Tu peux quitter cette page, l’analyse
-                continue.
+                {doc.reasoning_effort && ` (réflexion ${effortLabel(doc.reasoning_effort).toLowerCase()})`}.{' '}
+                {doc.reasoning_effort === 'high'
+                  ? 'Avec beaucoup de questions, cela peut prendre plusieurs minutes.'
+                  : 'Cela prend en général entre 30 secondes et 2 minutes et demie.'}{' '}
+                Tu peux quitter cette page, l’analyse continue.
               </p>
+              {preparedCount > 0 && (
+                <p className="small">
+                  Questions prêtes : {preparedCount} / {doc.question_count}
+                </p>
+              )}
             </>
           )}
         </section>

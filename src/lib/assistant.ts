@@ -18,9 +18,6 @@ export const EFFORT_OPTIONS: { value: ReasoningEffort; label: string }[] = [
   { value: 'high', label: 'Approfondie' },
 ]
 
-/** Au-delà de ce nombre de questions, une réflexion approfondie risque de dépasser le temps limite (150 s). */
-export const MAX_QUESTIONS_FOR_HIGH_EFFORT = 16
-
 export function effortLabel(effort: ReasoningEffort | null): string {
   return EFFORT_OPTIONS.find((o) => o.value === (effort ?? DEFAULT_EFFORT))!.label
 }

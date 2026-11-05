@@ -4,7 +4,7 @@ import EffortSelect from '../components/EffortSelect'
 import SubjectSelect from '../components/SubjectSelect'
 import StatusBadge from '../components/StatusBadge'
 import SubjectTag from '../components/SubjectTag'
-import { DEFAULT_EFFORT, MAX_QUESTIONS_FOR_HIGH_EFFORT, startAnalysis } from '../lib/assistant'
+import { DEFAULT_EFFORT, startAnalysis } from '../lib/assistant'
 import { buildClaudePrompt, CLAUDE_URL, parseClaudeAnswer } from '../lib/claudeImport'
 import { formatDay, toISODate } from '../lib/dates'
 import {
@@ -367,10 +367,8 @@ export default function Documents() {
             {effort === 'low' && 'Rapide : idéal pour des définitions ou du vocabulaire.'}
             {effort === 'medium' && 'Équilibrée : le bon choix pour la plupart des cours.'}
             {effort === 'high' &&
-              (questionCount > MAX_QUESTIONS_FOR_HIGH_EFFORT
-                ? `⚠ Approfondie avec ${questionCount} questions : l’analyse risque de dépasser le temps limite. ` +
-                  `Vise ${MAX_QUESTIONS_FOR_HIGH_EFFORT} questions au plus, ou un seul chapitre.`
-                : 'Approfondie : corrigés plus rigoureux pour les calculs et démonstrations, mais plus lent.')}
+              'Approfondie : corrigés plus rigoureux pour les calculs et démonstrations. Les questions sont préparées ' +
+                'par séries, ce qui peut prendre plusieurs minutes.'}
           </p>
         )}
 

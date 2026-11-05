@@ -168,8 +168,13 @@ secours.
 **Réflexion par document.** Le formulaire de la page Documents IA propose « Réflexion de l'IA » : *Rapide* (`low`),
 *Équilibrée* (`medium`, par défaut) ou *Approfondie* (`high`). Le choix est enregistré dans
 `documents.reasoning_effort` et réutilisé par « Relancer l'analyse », qui permet aussi de le changer (utile si
-l'analyse a manqué de temps). Avec *Approfondie*, viser 16 questions au plus : au-delà, l'IA risque de dépasser les
-150 secondes de l'Edge Function.
+l'analyse a manqué de temps).
+
+**Analyse approfondie par séries.** Une exécution de l'Edge Function ne peut pas dépasser 150 secondes. Avec
+*Approfondie*, les questions sont donc préparées par séries de 8 au plus : la première étape produit aussi
+l'explication, puis la fonction se rappelle elle-même pour chaque série suivante, avec à chaque fois ses 150 secondes
+(30 questions : 8 + 8 + 7 + 7, soit 4 étapes). Le document est envoyé à l'IA à chaque demande : 5 fois au total pour
+30 questions, ce qui consomme plus de quota. Si une étape échoue, « Relancer l'analyse » reprend tout depuis le début.
 
 Pour passer d'un fournisseur à l'autre plus tard, il suffit de changer `AI_PROVIDER` (et d'avoir ses clés).
 
